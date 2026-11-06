@@ -1,0 +1,46 @@
+name: Quadra
+options:
+  bundleIdPrefix: com.carvmatheus
+  deploymentTarget:
+    macOS: "14.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    DEVELOPMENT_TEAM: 4C4NB43CS8
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "Apple Development"
+targets:
+  Quadra:
+    type: application
+    platform: macOS
+    sources: [Quadra]
+    info:
+      path: Quadra/Info.plist
+      properties:
+        CFBundleDisplayName: Quadra
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSUIElement: true
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.carvmatheus.quadra
+        ENABLE_HARDENED_RUNTIME: YES
+  QuadraTests:
+    type: bundle.unit-test
+    platform: macOS
+    # Hostless: only the pure geometry code is compiled into the test bundle,
+    # so running tests never launches the app or asks for Accessibility.
+    sources: [QuadraTests, Quadra/Layout]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.carvmatheus.quadra.tests
+schemes:
+  Quadra:
+    build:
+      targets:
+        Quadra: all
+    test:
+      targets: [QuadraTests]
