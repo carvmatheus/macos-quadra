@@ -19,14 +19,16 @@ final class ZoneOverlay {
     }
 
     /// `zones` are in Cocoa screen coordinates.
-    func show(on screen: NSScreen, zones: [CGRect], spacing: CGFloat, highlighted: Int?) {
+    func show(on screen: NSScreen, zones: [CGRect], spacing: CGFloat, selection: ZoneSelection?) {
         hideTask?.cancel()
         if panel.frame != screen.frame {
             panel.setFrame(screen.frame, display: false)
         }
         let origin = screen.frame.origin
         zoneView.zones = zones.map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
-        zoneView.highlighted = highlighted
+        zoneView.selection = selection.map {
+            ZoneSelection(indices: $0.indices, frame: $0.frame.offsetBy(dx: -origin.x, dy: -origin.y))
+        }
         // Rounded corners would leave notches where zones touch, so they shrink with the gap.
         zoneView.cornerRadius = min(10, spacing)
         if !panel.isVisible {
@@ -36,7 +38,7 @@ final class ZoneOverlay {
 
     /// Shows the zones briefly, e.g. after a layout is picked, so the user sees the result and which screen it applies to.
     func preview(on screen: NSScreen, zones: [CGRect], spacing: CGFloat) {
-        show(on: screen, zones: zones, spacing: spacing, highlighted: nil)
+        show(on: screen, zones: zones, spacing: spacing, selection: nil)
         hideTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1.2))
             guard !Task.isCancelled else { return }
@@ -54,8 +56,8 @@ private final class ZoneView: NSView {
     var zones: [CGRect] = [] {
         didSet { if zones != oldValue { needsDisplay = true } }
     }
-    var highlighted: Int? {
-        didSet { if highlighted != oldValue { needsDisplay = true } }
+    var selection: ZoneSelection? {
+        didSet { if selection != oldValue { needsDisplay = true } }
     }
     var cornerRadius: CGFloat = 10 {
         didSet { if cornerRadius != oldValue { needsDisplay = true } }
@@ -63,16 +65,26 @@ private final class ZoneView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let accent = NSColor.controlAccentColor
-        for (index, zone) in zones.enumerated() {
-            let isActive = index == highlighted
-            let path = NSBezierPath(roundedRect: zone, xRadius: cornerRadius, yRadius: cornerRadius)
-            accent.withAlphaComponent(isActive ? 0.45 : 0.12).setFill()
-            path.fill()
-            accent.withAlphaComponent(isActive ? 1 : 0.6).setStroke()
-            path.lineWidth = isActive ? 3 : 1.5
-            path.stroke()
-            drawNumber(index + 1, in: zone, active: isActive)
+        let selected = Set(selection?.indices ?? [])
+        for (index, zone) in zones.enumerated() where !selected.contains(index) {
+            draw(zone, fill: accent.withAlphaComponent(0.12), stroke: accent.withAlphaComponent(0.6), lineWidth: 1.5)
         }
+        // The selection is drawn as one shape, so a drop spanning several zones also fills the gaps between them.
+        if let selection {
+            draw(selection.frame, fill: accent.withAlphaComponent(0.45), stroke: accent, lineWidth: 3)
+        }
+        for (index, zone) in zones.enumerated() {
+            drawNumber(index + 1, in: zone, active: selected.contains(index))
+        }
+    }
+
+    private func draw(_ rect: CGRect, fill: NSColor, stroke: NSColor, lineWidth: CGFloat) {
+        let path = NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius)
+        fill.setFill()
+        path.fill()
+        stroke.setStroke()
+        path.lineWidth = lineWidth
+        path.stroke()
     }
 
     private func drawNumber(_ number: Int, in zone: CGRect, active: Bool) {

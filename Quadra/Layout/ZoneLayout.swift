@@ -82,6 +82,53 @@ enum ZoneLayout: Equatable, Sendable {
         zones.firstIndex { $0.insetBy(dx: -spacing / 2, dy: -spacing / 2).contains(point) }
     }
 
+    /// How close to a shared edge the cursor must be, as a fraction of the zone's size,
+    /// for the drop to span the neighbouring zone too.
+    static let mergeEdgeFraction: CGFloat = 0.1
+
+    /// The zone(s) a drop at `point` fills. Near an edge shared with another zone the
+    /// selection spans both; near a grid corner it spans all four.
+    static func selection(at point: CGPoint, in zones: [CGRect], spacing: CGFloat,
+                          edgeFraction: CGFloat = mergeEdgeFraction) -> ZoneSelection? {
+        guard let primaryIndex = zoneIndex(at: point, in: zones, spacing: spacing) else { return nil }
+        let primary = zones[primaryIndex]
+        // Neighbours are separated by exactly `spacing`; allow a point of rounding slack.
+        let reach = spacing + 1
+        let horizontalBand = primary.width * edgeFraction
+        let verticalBand = primary.height * edgeFraction
+
+        func neighbor(_ isAdjacent: (CGRect) -> Bool) -> CGRect? {
+            zones.first { $0 != primary && isAdjacent($0) }
+        }
+        func spansRow(_ zone: CGRect) -> Bool {
+            point.y >= zone.minY - reach && point.y <= zone.maxY + reach
+        }
+        func spansColumn(_ zone: CGRect) -> Bool {
+            point.x >= zone.minX - reach && point.x <= zone.maxX + reach
+        }
+
+        var frame = primary
+        if primary.maxX - point.x <= horizontalBand,
+           let right = neighbor({ abs($0.minX - primary.maxX) <= reach && spansRow($0) }) {
+            frame = frame.union(right)
+        } else if point.x - primary.minX <= horizontalBand,
+                  let left = neighbor({ abs($0.maxX - primary.minX) <= reach && spansRow($0) }) {
+            frame = frame.union(left)
+        }
+        // Cocoa space: "above" is the zone starting where the primary one ends in y.
+        if primary.maxY - point.y <= verticalBand,
+           let above = neighbor({ abs($0.minY - primary.maxY) <= reach && spansColumn($0) }) {
+            frame = frame.union(above)
+        } else if point.y - primary.minY <= verticalBand,
+                  let below = neighbor({ abs($0.maxY - primary.minY) <= reach && spansColumn($0) }) {
+            frame = frame.union(below)
+        }
+
+        // The union of two edge neighbours also covers the diagonal zone at a grid corner.
+        let covered = frame.insetBy(dx: -0.5, dy: -0.5)
+        return ZoneSelection(indices: zones.indices.filter { covered.contains(zones[$0]) }, frame: frame)
+    }
+
     private static func equal(_ n: Int) -> [CGFloat] {
         Array(repeating: 1 / CGFloat(max(n, 1)), count: max(n, 1))
     }
@@ -97,4 +144,10 @@ enum ZoneLayout: Equatable, Sendable {
         }
         return result
     }
+}
+
+/// The zones a drop fills and the frame the window takes (their union).
+struct ZoneSelection: Equatable, Sendable {
+    var indices: [Int]
+    var frame: CGRect
 }

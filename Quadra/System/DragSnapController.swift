@@ -2,6 +2,7 @@ import AppKit
 
 /// FancyZones-style snapping: while a window is being dragged, holding ⇧ shows the zones
 /// configured for the screen under the cursor; releasing the mouse over a zone (⇧ still held) snaps the window into it.
+/// Releasing near an edge shared by two zones (or a grid corner) spans them all.
 ///
 /// Global NSEvent monitors only observe — the drag itself stays with the window server.
 /// A drag counts as a window drag once the window under the initial click changes position.
@@ -15,7 +16,10 @@ final class DragSnapController {
     private var startFrame: CGRect?
     private var dragEventsChecked = 0
     private var isWindowDrag = false
-    private var activeZone: CGRect?
+    /// Drop target in Cocoa space, plus the visible frame of its screen for minimum-size fitting.
+    private var activeTarget: (frame: CGRect, visible: CGRect)?
+    /// Read once per drag: the Dock doesn't move mid-drag and the window list isn't free to query.
+    private var dock: DockPlacement?
 
     /// Mouse drags that haven't moved the window by then are selections, scrollbar drags, etc.
     private let maxEventsBeforeGivingUp = 40
@@ -60,6 +64,7 @@ final class DragSnapController {
             // Moved without resizing: it's a title-bar drag. A resize changes the size and is left alone.
             guard frame.origin != startFrame.origin, frame.size == startFrame.size else { return }
             isWindowDrag = true
+            dock = Screens.dockPlacement()
         }
         update(shiftHeld: event.modifierFlags.contains(.shift))
     }
@@ -71,26 +76,26 @@ final class DragSnapController {
 
     private func mouseUp(_ event: NSEvent) {
         defer { reset() }
-        guard isWindowDrag, let window = candidate, let zone = activeZone else { return }
-        let target = Screens.toAX(zone)
+        guard isWindowDrag, let window = candidate, let target = activeTarget else { return }
         // Let the window server finish the drag first, otherwise its final move can land after ours.
         DispatchQueue.main.async {
-            window.setFrame(target)
+            WindowMover.place(window, at: target.frame, within: target.visible)
         }
     }
 
     private func update(shiftHeld: Bool) {
         let mouse = NSEvent.mouseLocation
         guard shiftHeld, let screen = Screens.screen(at: mouse) else {
-            activeZone = nil
+            activeTarget = nil
             overlay.hide()
             return
         }
         let config = settings.zones(for: screen)
-        let zones = config.layout.zones(in: screen.visibleFrame, spacing: config.spacing)
-        let index = ZoneLayout.zoneIndex(at: mouse, in: zones, spacing: config.spacing)
-        activeZone = index.map { zones[$0] }
-        overlay.show(on: screen, zones: zones, spacing: config.spacing, highlighted: index)
+        let usable = Screens.usableFrame(of: screen, dock: dock)
+        let zones = config.layout.zones(in: usable, spacing: config.spacing)
+        let selection = ZoneLayout.selection(at: mouse, in: zones, spacing: config.spacing)
+        activeTarget = selection.map { ($0.frame, usable) }
+        overlay.show(on: screen, zones: zones, spacing: config.spacing, selection: selection)
     }
 
     private func reset() {
@@ -98,7 +103,8 @@ final class DragSnapController {
         startFrame = nil
         dragEventsChecked = 0
         isWindowDrag = false
-        activeZone = nil
+        dock = nil
+        activeTarget = nil
         overlay.hide()
     }
 }

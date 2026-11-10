@@ -99,7 +99,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
         // Flash the result on that screen so it is obvious which monitor was changed.
         let config = settings.zones(for: screen)
-        preview.preview(on: screen, zones: config.layout.zones(in: screen.visibleFrame, spacing: config.spacing), spacing: config.spacing)
+        preview.preview(on: screen, zones: config.layout.zones(in: Screens.usableFrame(of: screen), spacing: config.spacing), spacing: config.spacing)
     }
 
     private static func title(for screen: NSScreen, isPrimary: Bool) -> String {

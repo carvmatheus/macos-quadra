@@ -130,3 +130,121 @@ final class ZonePreferencesTests: XCTestCase {
         XCTAssertEqual(DisplayZones(layoutID: "removed-layout", spacing: 0).layout, .default)
     }
 }
+
+final class FitTests: XCTestCase {
+    // Built-in display: right half is 756pt wide, but Outlook refuses anything under 811pt.
+    let visible = CGRect(x: 0, y: 0, width: 1512, height: 949)
+
+    func testRightAlignedTargetKeepsOversizedWindowOnScreen() {
+        let target = CGRect(x: 756, y: 0, width: 756, height: 949)
+        let fitted = ScreenGeometry.fit(CGSize(width: 811, height: 949), into: target, within: visible)
+        XCTAssertEqual(fitted, CGRect(x: 701, y: 0, width: 811, height: 949))
+    }
+
+    func testLeftAlignedTargetGrowsToTheRight() {
+        let target = CGRect(x: 0, y: 0, width: 756, height: 949)
+        let fitted = ScreenGeometry.fit(CGSize(width: 811, height: 949), into: target, within: visible)
+        XCTAssertEqual(fitted, CGRect(x: 0, y: 0, width: 811, height: 949))
+    }
+
+    func testMiddleTargetGrowsAroundItsCenter() {
+        let target = CGRect(x: 504, y: 0, width: 504, height: 949)
+        let fitted = ScreenGeometry.fit(CGSize(width: 604, height: 949), into: target, within: visible)
+        XCTAssertEqual(fitted, CGRect(x: 454, y: 0, width: 604, height: 949))
+    }
+
+    func testTopRowTargetStaysUnderTheMenuBar() {
+        // Cocoa space: the top row ends at visible.maxY.
+        let target = CGRect(x: 0, y: 475, width: 756, height: 474)
+        let fitted = ScreenGeometry.fit(CGSize(width: 756, height: 600), into: target, within: visible)
+        XCTAssertEqual(fitted, CGRect(x: 0, y: 349, width: 756, height: 600))
+    }
+
+    func testWindowThatFitsKeepsTarget() {
+        let target = CGRect(x: 756, y: 0, width: 756, height: 949)
+        XCTAssertEqual(ScreenGeometry.fit(target.size, into: target, within: visible), target)
+    }
+}
+
+final class ZoneSelectionTests: XCTestCase {
+    let area = CGRect(x: 0, y: 0, width: 1200, height: 800)
+
+    func testCenterOfZoneSelectsOnlyThatZone() {
+        let zones = ZoneLayout.columns(3).zones(in: area, spacing: 0)
+        let selection = ZoneLayout.selection(at: CGPoint(x: 200, y: 400), in: zones, spacing: 0)
+        XCTAssertEqual(selection, ZoneSelection(indices: [0], frame: zones[0]))
+    }
+
+    func testNearSharedEdgeSpansBothZones() {
+        let zones = ZoneLayout.columns(3).zones(in: area, spacing: 0)
+        let expected = ZoneSelection(indices: [0, 1], frame: CGRect(x: 0, y: 0, width: 800, height: 800))
+        // Zone width 400 → the merge band reaches 40pt into each zone.
+        XCTAssertEqual(ZoneLayout.selection(at: CGPoint(x: 370, y: 400), in: zones, spacing: 0), expected)
+        XCTAssertEqual(ZoneLayout.selection(at: CGPoint(x: 430, y: 400), in: zones, spacing: 0), expected)
+        XCTAssertEqual(ZoneLayout.selection(at: CGPoint(x: 350, y: 400), in: zones, spacing: 0)?.indices, [0])
+    }
+
+    func testScreenEdgeHasNothingToMergeWith() {
+        let zones = ZoneLayout.columns(3).zones(in: area, spacing: 0)
+        XCTAssertEqual(ZoneLayout.selection(at: CGPoint(x: 5, y: 400), in: zones, spacing: 0)?.indices, [0])
+    }
+
+    func testGridCenterSpansAllFourZones() {
+        let zones = ZoneLayout.grid(columns: 2, rows: 2).zones(in: area, spacing: 0)
+        let selection = ZoneLayout.selection(at: CGPoint(x: 590, y: 410), in: zones, spacing: 0)
+        XCTAssertEqual(selection, ZoneSelection(indices: [0, 1, 2, 3], frame: area))
+    }
+
+    func testGridEdgeSpansTwoZonesVertically() {
+        let zones = ZoneLayout.grid(columns: 2, rows: 2).zones(in: area, spacing: 0)
+        let selection = ZoneLayout.selection(at: CGPoint(x: 300, y: 410), in: zones, spacing: 0)
+        XCTAssertEqual(selection, ZoneSelection(indices: [0, 2], frame: CGRect(x: 0, y: 0, width: 600, height: 800)))
+    }
+
+    func testMergeWorksAcrossSpacing() {
+        let zones = ZoneLayout.columns(2).zones(in: CGRect(x: 0, y: 0, width: 100, height: 100), spacing: 10)
+        let selection = ZoneLayout.selection(at: CGPoint(x: 50, y: 50), in: zones, spacing: 10)
+        XCTAssertEqual(selection, ZoneSelection(indices: [0, 1], frame: CGRect(x: 10, y: 10, width: 80, height: 80)))
+    }
+}
+
+final class UsableFrameTests: XCTestCase {
+    // MacBook below, LG to the left; menu bar 33pt on the MacBook, 30pt on the LG.
+    let macbook = CGRect(x: 0, y: 0, width: 1512, height: 982)
+    let macbookVisible = CGRect(x: 0, y: 0, width: 1512, height: 949)
+    let lg = CGRect(x: -2560, y: -187, width: 2560, height: 1080)
+    let lgVisible = CGRect(x: -2560, y: -187, width: 2560, height: 1050)
+
+    func testDockScreenLosesTheDockEdge() {
+        let dock = DockPlacement(screenFrame: lg, edge: .bottom, thickness: 57)
+        XCTAssertEqual(ScreenGeometry.usableFrame(frame: lg, visible: lgVisible, dock: dock),
+                       CGRect(x: -2560, y: -130, width: 2560, height: 993))
+    }
+
+    func testOtherScreenIgnoresStaleDockReservation() {
+        // macOS kept reserving the Dock on the MacBook after it moved to the LG.
+        let stale = CGRect(x: 0, y: 57, width: 1512, height: 892)
+        let dock = DockPlacement(screenFrame: lg, edge: .bottom, thickness: 57)
+        XCTAssertEqual(ScreenGeometry.usableFrame(frame: macbook, visible: stale, dock: dock), macbookVisible)
+    }
+
+    func testNoDockUsesEverythingBelowTheMenuBar() {
+        XCTAssertEqual(ScreenGeometry.usableFrame(frame: macbook, visible: CGRect(x: 0, y: 4, width: 1512, height: 945), dock: nil),
+                       macbookVisible)
+    }
+
+    func testSideDocks() {
+        let left = DockPlacement(screenFrame: macbook, edge: .left, thickness: 57)
+        let right = DockPlacement(screenFrame: macbook, edge: .right, thickness: 57)
+        XCTAssertEqual(ScreenGeometry.usableFrame(frame: macbook, visible: macbookVisible, dock: left),
+                       CGRect(x: 57, y: 0, width: 1455, height: 949))
+        XCTAssertEqual(ScreenGeometry.usableFrame(frame: macbook, visible: macbookVisible, dock: right),
+                       CGRect(x: 0, y: 0, width: 1455, height: 949))
+    }
+
+    func testDockThicknessIsMeasuredFromWhicheverScreenReservesIt() {
+        let stale = CGRect(x: 0, y: 57, width: 1512, height: 892)
+        XCTAssertEqual(ScreenGeometry.dockThickness(screens: [(macbook, stale), (lg, lgVisible)]), 57)
+        XCTAssertNil(ScreenGeometry.dockThickness(screens: [(macbook, macbookVisible), (lg, lgVisible)]))
+    }
+}
