@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 
 /// Menu bar item: permission status, shortcut reference and, for every connected
 /// screen, its own zone layout and spacing.
@@ -51,6 +52,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+        let login = action("Abrir ao iniciar sessão", #selector(toggleLaunchAtLogin))
+        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        menu.addItem(login)
+        if SMAppService.mainApp.status == .requiresApproval {
+            menu.addItem(action("Aprovar em Itens de Início…", #selector(openLoginItems)))
+        }
         menu.addItem(NSMenuItem(title: "Sair do Quadra", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
@@ -89,6 +96,26 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func grantPermission() {
         Permissions.request()
         Permissions.openSettings()
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        let service = SMAppService.mainApp
+        do {
+            if service.status == .enabled {
+                try service.unregister()
+            } else {
+                try service.register()
+            }
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Não foi possível alterar a abertura ao iniciar sessão"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+    }
+
+    @objc private func openLoginItems() {
+        SMAppService.openSystemSettingsLoginItems()
     }
 
     @objc private func choose(_ sender: NSMenuItem) {

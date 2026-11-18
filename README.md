@@ -23,6 +23,8 @@ Apps com tamanho mínimo maior que a zona (o Outlook não fica com menos de ~810
 
 Ao escolher, as zonas piscam no monitor alterado. As configurações ficam salvas pelo UUID do monitor, então sobrevivem a reinícios e a desconectar/reconectar.
 
+**Abrir ao iniciar sessão**: opção no menu da barra (usa `SMAppService`; aparece em *Ajustes do Sistema › Geral › Itens de Início*). Ative a partir do app instalado em `/Applications` (`make install`), não do build de Debug, porque o item de início guarda o caminho do app.
+
 ## Por que ⌃⌘ + setas
 
 O macOS 15+ já tem tiling nativo em **🌐⌃ + setas** (menu *Janela › Mover e Redimensionar*), e ⌃ + setas troca de Espaço. ⌃⌘ + setas não é usado pelo sistema. Alguns apps usam (o Xcode navega para trás/frente com ⌃⌘←/→); o atalho global do Quadra tem prioridade enquanto ele estiver aberto.
